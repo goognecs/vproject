@@ -20,6 +20,7 @@ import com.visualpathit.account.service.UserService;
 import com.visualpathit.account.setup.StandaloneMvcTestViewResolver;
 
 
+@SuppressWarnings("unused")
 public class UserControllerTest {
 	
 	@Mock

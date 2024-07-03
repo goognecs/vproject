@@ -1,47 +1,54 @@
 pipeline {
-    
-    agent any
-/*    
-    tools {
-        maven "maven3"
+    agent {
+        node {
+            label 'cloud_agent'
+        }
     }
-*/    
-    environment {
+    tools {
+        maven 'Maven3'
+        jdk "openJDK"
+    }
+
+    environments {
         NEXUS_VERSION = "nexus3"
         NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "172.31.40.209:8081"
+        NEXUS_URL = "172.31.62.34:8081" //Private_IP
         NEXUS_REPOSITORY = "vprofile-release"
-    NEXUS_REPOGRP_ID    = "vprofile-grp-repo"
+        NEXUS_REPOGRP_ID    = "vprofile-maven-group"
         NEXUS_CREDENTIAL_ID = "nexuslogin"
         ARTVERSION = "${env.BUILD_ID}"
+        scannerHome = tool 'sonarscanner6'
     }
-    
-    stages{
-        
-        stage('BUILD'){
-            steps {
-                sh 'mvn clean install -DskipTests'
+
+    stages {
+        stage('Fetch Source Code') {
+            steps{
+                git branch: 'main', url: 'https://github.com/goognecs/vproject.git'
+            }
+        }
+
+        stage('Build') {
+            steps{
+                sh 'mvn install -DskipTests'
             }
             post {
                 success {
-                    echo 'Now Archiving...'
-                    archiveArtifacts artifacts: '**/target/*.war'
+                    echo "Now Archiving Artifact"
+                    archiveArtifacts(artifacts: '**/target/*war')
                 }
             }
         }
-
-    stage('UNIT TEST'){
-            steps {
+        stage('Unit Test') {
+            steps{
                 sh 'mvn test'
             }
         }
-
-    stage('INTEGRATION TEST'){
-            steps {
+        stage('Integration Test') {
+            steps{
                 sh 'mvn verify -DskipUnitTests'
             }
         }
-        
+
         stage ('CODE ANALYSIS WITH CHECKSTYLE'){
             steps {
                 sh 'mvn checkstyle:checkstyle'
@@ -53,31 +60,26 @@ pipeline {
             }
         }
 
-        stage('CODE ANALYSIS with SONARQUBE') {
-          
-          environment {
-             scannerHome = tool 'sonarscanner4'
-          }
-
-          steps {
-            withSonarQubeEnv('sonar-pro') {
-               sh '''${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=vprofile \
-                   -Dsonar.projectName=vprofile-repo \
-                   -Dsonar.projectVersion=1.0 \
-                   -Dsonar.sources=src/ \
-                   -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/ \
-                   -Dsonar.junit.reportsPath=target/surefire-reports/ \
-                   -Dsonar.jacoco.reportsPath=target/jacoco.exec \
-                   -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml'''
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-vprofile') {
+                    sh '''${scannerHOme}/bin/sonar-scanner
+                    -Dsonar.projectKey=vprofile \   # give the key name of your project#
+                    -Dsonar.projectName='vprofile' \  # give the name of your project#
+                    -Dsonar.sources=./src/ \
+                    -Dsonar.tests=./src/test/java \
+                    -Dsonar.java.binaries=./target/test-classes/com/visualpathit/account/controllerTest/ \
+                    -Dsonar.junit.reportPaths=./target/surefire-reports \
+                    -Dsonar.jacoco.reportPaths=./target/site/jacoco/jacoco.xml \
+                    -Dsonar.checkstyle.reportPath=./target/checkstyle-result.xml"
+                    '''
+                }
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate(abortPipeline: true)
+                }
             }
-
-            timeout(time: 10, unit: 'MINUTES') {
-               waitForQualityGate abortPipeline: true
-            }
-          }
         }
-
-        stage("Publish to Nexus Repository Manager") {
+        stage('Publish Artifacts to Nexus Repository') {
             steps {
                 script {
                     pom = readMavenPom file: "pom.xml";
@@ -106,16 +108,9 @@ pipeline {
                                 type: "pom"]
                             ]
                         );
-                    } 
-            else {
-                        error "*** File: ${artifactPath}, could not be found";
                     }
                 }
             }
         }
-
-
     }
-
-
 }
